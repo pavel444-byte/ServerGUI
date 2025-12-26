@@ -327,7 +327,9 @@ Tips:
             messagebox.showwarning("Warning", "Server is already running!")
             return
         
-        jar_path = os.path.join(self.server_dir.get(), self.server_jar.get())
+        jar_path = self.server_jar.get()
+        if not os.path.isabs(jar_path):
+            jar_path = os.path.join(self.server_dir.get(), jar_path)
         
         if not os.path.exists(jar_path):
             messagebox.showerror("Error", f"Server JAR not found: {jar_path}")
@@ -341,7 +343,7 @@ Tips:
             f"-Xmx{memory}M",
             f"-Xms{memory}M",
             "-jar",
-            self.server_jar.get(),
+            jar_path,
             "nogui"
         ]
         
@@ -645,7 +647,7 @@ Tips:
         
         # Update configuration
         self.server_dir.set(str(server_path))
-        self.server_jar.set(server_jar_name)
+        self.server_jar.set(str(server_path / server_jar_name))
         
         if plugins_path.exists() and plugins_path.is_dir():
             self.plugins_dir.set(str(plugins_path))
@@ -760,8 +762,7 @@ Tips:
             filetypes=[("JAR files", "*.jar"), ("All files", "*.*")]
         )
         if filename:
-            self.server_jar.set(os.path.basename(filename))
-            self.server_dir.set(os.path.dirname(filename))
+            self.server_jar.set(filename)
     
     def browse_server_dir(self):
         """Browse for server directory."""
