@@ -1,0 +1,7 @@
+[project]
+name = "servergui"
+version = "0.1.0"
+description = "ServerGUI is a minecraft gui interface for servers"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
