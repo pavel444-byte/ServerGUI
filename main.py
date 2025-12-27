@@ -35,7 +35,7 @@ class MinecraftServerGUI:
         self.server_memory = tk.StringVar(value="2048")
         self.server_dir = tk.StringVar(value=os.getcwd())
         self.plugins_dir = tk.StringVar(value=os.path.join(os.getcwd(), "plugins"))
-        self.server_type = tk.StringVar(value="Paper")
+        self.server_type = tk.StringVar(value="paper")
         self.server_version = tk.StringVar(value="1.21.4")
         
         # Setup GUI
@@ -254,6 +254,41 @@ class MinecraftServerGUI:
         
         config_frame = ttk.LabelFrame(self.config_tab, text="Server Configuration", padding=10)
         config_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Server Type and Version frame
+        type_version_frame = ttk.Frame(config_frame)
+        type_version_frame.pack(fill=tk.X, pady=5)
+        
+        # Server Type
+        ttk.Label(type_version_frame, text="Server Type:").pack(side=tk.LEFT, padx=5)
+        server_types = ["paper", "spigot", "bukkit", "purpur", "fabric", "forge", "vanilla"]
+        server_type_combo = ttk.Combobox(
+            type_version_frame,
+            textvariable=self.server_type,
+            values=server_types,
+            state="readonly",
+            width=15
+        )
+        server_type_combo.pack(side=tk.LEFT, padx=5)
+        
+        # Server Version
+        ttk.Label(type_version_frame, text="Version:").pack(side=tk.LEFT, padx=(20, 5))
+        common_versions = ["1.21.4", "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.1", "1.19.4", "1.19.2", "1.18.2", "1.17.1", "1.16.5"]
+        server_version_combo = ttk.Combobox(
+            type_version_frame,
+            textvariable=self.server_version,
+            values=common_versions,
+            width=10
+        )
+        server_version_combo.pack(side=tk.LEFT, padx=5)
+        
+        # Info label
+        info_label = ttk.Label(
+            config_frame,
+            text="ℹ️ Server type and version are used to filter compatible plugins",
+            foreground="gray"
+        )
+        info_label.pack(fill=tk.X, pady=(0, 10))
         
         # Server JAR
         jar_frame = ttk.Frame(config_frame)
@@ -491,13 +526,36 @@ Tips:
     def _search_plugins_thread(self, query: str):
         """Search for plugins on Modrinth API."""
         try:
-            self.root.after(0, lambda: self.log_to_console(f"🔍 Searching for '{query}'...\n"))
+            server_type = self.server_type.get().lower()
+            server_version = self.server_version.get()
+            
+            self.root.after(0, lambda: self.log_to_console(f"🔍 Searching for '{query}' (Type: {server_type}, Version: {server_version})...\n"))
             
             # Modrinth API search endpoint
             url = "https://api.modrinth.com/v2/search"
+            
+            # Build facets based on server type
+            # Map server types to Modrinth categories/loaders
+            facets = [["project_type:plugin"]]
+            
+            # Add loader facet based on server type
+            loader_map = {
+                "paper": "paper",
+                "spigot": "spigot",
+                "bukkit": "bukkit",
+                "purpur": "purpur",
+                "fabric": "fabric",
+                "forge": "forge",
+                "vanilla": "bukkit"  # Vanilla servers typically use bukkit plugins
+            }
+            
+            loader = loader_map.get(server_type, "paper")
+            
+            # Note: Modrinth uses categories and loaders differently
+            # For plugins, we'll search broadly and filter by game versions
             params = {
                 "query": query,
-                "facets": '[["project_type:plugin"]]',
+                "facets": json.dumps(facets),
                 "limit": 20
             }
             
@@ -511,7 +569,8 @@ Tips:
                 self.root.after(0, lambda: messagebox.showinfo("No Results", "No plugins found matching your search."))
                 return
             
-            # Process results
+            # Filter results by version compatibility
+            compatible_count = 0
             for hit in hits:
                 project_id = hit.get("project_id", "")
                 title = hit.get("title", "Unknown")
@@ -519,20 +578,37 @@ Tips:
                 downloads = hit.get("downloads", 0)
                 latest_version = hit.get("latest_version", "N/A")
                 
-                # Store plugin data
+                # Check version compatibility
+                versions_list = hit.get("versions", [])
+                game_versions = hit.get("game_versions", [])
+                
+                # Check if the plugin supports the selected version
+                is_compatible = not server_version or server_version in game_versions or not game_versions
+                
+                # Store plugin data with compatibility info
                 self.plugins_data[project_id] = {
                     "title": title,
                     "project_id": project_id,
                     "slug": hit.get("slug", ""),
-                    "description": hit.get("description", "")
+                    "description": hit.get("description", ""),
+                    "compatible": is_compatible,
+                    "game_versions": game_versions
                 }
                 
+                # Add compatibility indicator to title
+                display_title = title
+                if not is_compatible and game_versions:
+                    display_title = f"⚠️ {title}"
+                elif is_compatible:
+                    display_title = f"✓ {title}"
+                    compatible_count += 1
+                
                 # Add to treeview
-                self.root.after(0, lambda t=title, a=author, d=downloads, v=latest_version, pid=project_id: 
+                self.root.after(0, lambda t=display_title, a=author, d=downloads, v=latest_version, pid=project_id:
                     self.plugins_tree.insert("", tk.END, iid=pid, values=(t, a, f"{d:,}", v))
                 )
             
-            self.root.after(0, lambda: self.log_to_console(f"✓ Found {len(hits)} plugin(s)\n"))
+            self.root.after(0, lambda: self.log_to_console(f"✓ Found {len(hits)} plugin(s) ({compatible_count} compatible with {server_version})\n"))
             
         except requests.exceptions.RequestException as e:
             self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Failed to search plugins: {e}"))
@@ -685,22 +761,59 @@ Tips:
         try:
             title = plugin_data.get("title", "Unknown")
             project_id = plugin_data.get("project_id", "")
+            server_version = self.server_version.get()
+            server_type = self.server_type.get().lower()
             
             self.root.after(0, lambda: self.log_to_console(f"\n📥 Installing plugin: {title}...\n"))
             
             # Get project versions
             url = f"https://api.modrinth.com/v2/project/{project_id}/version"
-            response = requests.get(url, timeout=10)
+            params = {}
+            
+            # Filter by game version if specified
+            if server_version:
+                params["game_versions"] = f'["{server_version}"]'
+            
+            response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             
             versions = response.json()
+            
+            # If no versions found for specific version, try without filter
+            if not versions and server_version:
+                self.root.after(0, lambda: self.log_to_console(f"⚠️ No version found for {server_version}, trying latest...\n"))
+                response = requests.get(f"https://api.modrinth.com/v2/project/{project_id}/version", timeout=10)
+                response.raise_for_status()
+                versions = response.json()
+            
             if not versions:
                 self.root.after(0, lambda: messagebox.showerror("Error", "No versions available for this plugin!"))
                 return
             
-            # Get the latest version
-            latest_version = versions[0]
-            files = latest_version.get("files", [])
+            # Find the best matching version
+            best_version = None
+            for version in versions:
+                version_game_versions = version.get("game_versions", [])
+                version_loaders = version.get("loaders", [])
+                
+                # Check if version matches our server version and type
+                version_matches = not server_version or server_version in version_game_versions
+                loader_matches = not server_type or server_type in version_loaders or not version_loaders
+                
+                if version_matches:
+                    best_version = version
+                    break
+            
+            # If no matching version found, use the latest
+            if not best_version:
+                best_version = versions[0]
+                version_info = best_version.get("game_versions", [])
+                self.root.after(0, lambda v=version_info: self.log_to_console(f"⚠️ Using latest version (supports: {', '.join(v[:3]) if v else 'unknown'})\n"))
+            else:
+                version_info = best_version.get("game_versions", [])
+                self.root.after(0, lambda v=version_info: self.log_to_console(f"✓ Found compatible version (supports: {', '.join(v[:3]) if v else 'unknown'})\n"))
+            
+            files = best_version.get("files", [])
             
             if not files:
                 self.root.after(0, lambda: messagebox.showerror("Error", "No downloadable files found!"))
@@ -789,7 +902,9 @@ Tips:
             "server_jar": self.server_jar.get(),
             "server_memory": self.server_memory.get(),
             "server_dir": self.server_dir.get(),
-            "plugins_dir": self.plugins_dir.get()
+            "plugins_dir": self.plugins_dir.get(),
+            "server_type": self.server_type.get(),
+            "server_version": self.server_version.get()
         }
         
         try:
@@ -810,6 +925,8 @@ Tips:
                 self.server_memory.set(config.get("server_memory", "2048"))
                 self.server_dir.set(config.get("server_dir", os.getcwd()))
                 self.plugins_dir.set(config.get("plugins_dir", os.path.join(os.getcwd(), "plugins")))
+                self.server_type.set(config.get("server_type", "paper"))
+                self.server_version.set(config.get("server_version", "1.21.4"))
         except Exception as e:
             self.log_to_console(f"Warning: Could not load configuration: {e}\n")
 
