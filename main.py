@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import psutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,9 @@ class MinecraftServerGUI:
         self.plugins_dir = tk.StringVar(value=os.path.join(os.getcwd(), "plugins"))
         self.server_type = tk.StringVar(value="paper")
         self.server_version = tk.StringVar(value="1.21.4")
+        
+        # Session logs for saving
+        self.session_logs = []
         
         # Setup GUI
         self.setup_ui()
@@ -452,6 +456,29 @@ Tips:
             self.root.after(0, lambda: self.update_server_status(False))
             self.log_to_console("\n" + "=" * 60 + "\n")
             self.log_to_console("Server stopped.\n")
+            self._save_session_logs()
+    
+    def _save_session_logs(self):
+        """Save the current session logs to a file."""
+        if not self.session_logs:
+            return
+            
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            log_filename = f"logs-{timestamp}.log"
+            log_path = os.path.join(self.server_dir.get(), log_filename)
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.writelines(self.session_logs)
+            
+            self.log_to_console(f"📝 Session logs saved to {log_filename}\n")
+            # Clear logs for next session
+            self.session_logs = []
+        except Exception as e:
+            print(f"Error saving logs: {e}")
     
     def stop_server(self):
         """Stop the Minecraft server."""
@@ -526,7 +553,8 @@ Tips:
             self.stop_button.config(state=tk.DISABLED)
     
     def log_to_console(self, text: str):
-        """Log text to the console widget."""
+        """Log text to the console widget and session logs."""
+        self.session_logs.append(text)
         def _log():
             self.console_text.insert(tk.END, text)
             self.console_text.see(tk.END)
@@ -1052,9 +1080,37 @@ Tips:
                 response.raise_for_status()
                 versions = [v.get("version") for v in response.json() if v.get("stable")]
                 
-            elif server_type in ["vanilla", "spigot", "bukkit", "forge"]:
-                # Use Modrinth as a fallback for many types
-                # This is a bit of a hack but Modrinth has a lot of data
+            elif server_type in ["vanilla"]:
+                # Mojang API for Vanilla
+                url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                versions = [v.get("id") for v in response.json().get("versions", []) if v.get("type") == "release"]
+                
+            elif server_type in ["spigot", "bukkit"]:
+                # Spigot/Bukkit via GetBukkit (unofficial but common) or fallback to Modrinth
+                # For now, let's use a more reliable source if possible, but Modrinth is actually good for game versions
+                url = "https://api.modrinth.com/v2/game_version"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                versions = [v.get("version") for v in response.json() if v.get("version_type") == "release"]
+
+            elif server_type in ["forge"]:
+                # Forge versions from their promo API
+                url = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                promos = response.json().get("promos", {})
+                # Extract unique game versions from promos (e.g., "1.20.1-latest" -> "1.20.1")
+                forge_versions = set()
+                for key in promos.keys():
+                    game_ver = key.split("-")[0]
+                    if game_ver:
+                        forge_versions.add(game_ver)
+                versions = sorted(list(forge_versions), reverse=True)
+
+            else:
+                # Fallback for any other types
                 url = "https://api.modrinth.com/v2/game_version"
                 response = requests.get(url, timeout=10)
                 response.raise_for_status()
