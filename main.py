@@ -368,13 +368,24 @@ Tips:
             return
         
         jar_path = self.server_jar.get()
+        server_dir = self.server_dir.get()
+        
+        # If server directory doesn't exist or is empty/default, create a new one
+        if not server_dir or not os.path.exists(server_dir):
+            new_dir = os.path.join(os.getcwd(), "minecraft_server")
+            os.makedirs(new_dir, exist_ok=True)
+            self.server_dir.set(new_dir)
+            server_dir = new_dir
+            self.plugins_dir.set(os.path.join(new_dir, "plugins"))
+            self.log_to_console(f"📁 Created new server folder: {new_dir}\n")
+
         if not os.path.isabs(jar_path):
-            jar_path = os.path.join(self.server_dir.get(), jar_path)
+            jar_path = os.path.join(server_dir, jar_path)
         
         if not os.path.exists(jar_path):
             response = messagebox.askyesno(
                 "JAR Not Found",
-                f"Server JAR not found at {jar_path}.\n\nWould you like to automatically download {self.server_type.get()} version {self.server_version.get()}?"
+                f"Server JAR not found at {jar_path}.\n\nWould you like to automatically download {self.server_type.get()} version {self.server_version.get()} into the server folder?"
             )
             if response:
                 # Set default JAR name if it's just "server.jar" and we want to be more specific
@@ -382,6 +393,7 @@ Tips:
                 if current_jar == "server.jar":
                     new_jar_name = f"{self.server_type.get()}-{self.server_version.get()}.jar"
                     self.server_jar.set(new_jar_name)
+                    jar_path = os.path.join(server_dir, new_jar_name)
                 
                 self.log_to_console(f"Initiating auto-download for {self.server_type.get()} {self.server_version.get()}...\n")
                 threading.Thread(target=self._download_server_jar, daemon=True).start()
