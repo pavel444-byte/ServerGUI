@@ -6,6 +6,7 @@ A modern, user-friendly graphical interface for managing Minecraft servers with 
 
 ### 🎮 Server Management
 - **Run Server**: Start your Minecraft server with customizable memory allocation
+- **Auto-Download**: Automatically download server JARs (Paper, Purpur, Fabric, etc.) if not found
 - **Restart Server**: Gracefully restart the server without losing progress
 - **Stop Server**: Safely shutdown the server
 - **Real-time Console**: View server logs in real-time with a dark theme console
@@ -16,13 +17,15 @@ A modern, user-friendly graphical interface for managing Minecraft servers with 
 - **Installed Plugins Display**: View all currently installed plugins in your plugins folder
 - **Search Modrinth**: Search for Minecraft plugins directly from Modrinth's extensive library
 - **One-Click Install**: Download and install plugins with a single click
+- **Compatibility Filtering**: Automatically filters plugins based on your server type and version
 - **Delete Plugins**: Remove unwanted plugins directly from the GUI
 - **Refresh Plugin List**: Update the installed plugins list with a single click
 - **Download Statistics**: View plugin popularity and version information
 - **Plugin Folder Access**: Quick access to your plugins directory
 
 ### ⚙️ Configuration
-- **Server JAR Selection**: Choose your Minecraft server JAR file
+- **Server Type & Version**: Select from various server types (Paper, Fabric, Vanilla, etc.) and fetch available versions automatically
+- **Server JAR Selection**: Choose your Minecraft server JAR file or let the app download it
 - **Memory Allocation**: Set custom memory limits for your server
 - **Directory Management**: Configure server and plugins directories
 - **Persistent Settings**: Save and load your configuration automatically
@@ -95,17 +98,18 @@ A modern, user-friendly graphical interface for managing Minecraft servers with 
    - Go to the "Server Control" tab
    - Click "▶ Run Server"
 
-#### Option 2: Manual Setup
+#### Option 2: Manual Setup & Auto-Download
 
-1. **Download Minecraft Server JAR**:
-   - Download the server JAR from [Minecraft's official website](https://www.minecraft.net/en-us/download/server)
-   - Or use Paper, Spigot, or other server software
-
-2. **Configure the Application**:
+1. **Configure the Application**:
    - Go to the "Configuration" tab
-   - Click "Browse" next to "Server JAR" and select your downloaded server JAR
+   - Select your **Server Type** (e.g., Paper, Purpur, Fabric, Vanilla)
+   - Select your desired **Version** (the app will fetch available versions automatically)
    - Set your desired memory allocation (e.g., 2048 MB for 2GB)
    - Choose your server directory
+
+2. **Download or Select JAR**:
+   - **Auto-Download**: Click "▶ Run Server" in the "Server Control" tab. If the JAR is not found, the app will ask to download it for you.
+   - **Manual**: Click "Browse" next to "Server JAR" and select your own JAR file.
 
 3. **Accept EULA**:
    - Run the server once (it will stop automatically)
@@ -242,6 +246,8 @@ For issues and questions:
 ## Changelog
 
 ### Version 0.2.0 (Current)
+- ✅ **NEW**: Auto-download server JARs (Paper, Purpur, Fabric, etc.)
+- ✅ **NEW**: Automatic version fetching for various server types
 - ✅ **NEW**: Server folder import feature
 - ✅ **NEW**: Installed plugins display with refresh functionality
 - ✅ **NEW**: Delete plugins directly from GUI
