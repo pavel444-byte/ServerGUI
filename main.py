@@ -273,14 +273,19 @@ class MinecraftServerGUI:
         
         # Server Version
         ttk.Label(type_version_frame, text="Version:").pack(side=tk.LEFT, padx=(20, 5))
-        common_versions = ["1.21.4", "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.1", "1.19.4", "1.19.2", "1.18.2", "1.17.1", "1.16.5"]
-        server_version_combo = ttk.Combobox(
+        self.server_version_combo = ttk.Combobox(
             type_version_frame,
             textvariable=self.server_version,
-            values=common_versions,
+            values=[],
             width=10
         )
-        server_version_combo.pack(side=tk.LEFT, padx=5)
+        self.server_version_combo.pack(side=tk.LEFT, padx=5)
+        
+        # Bind server type change to update versions
+        server_type_combo.bind("<<ComboboxSelected>>", lambda e: self.update_version_list())
+        
+        # Initial version list update
+        self.root.after(500, self.update_version_list)
         
         # Info label
         info_label = ttk.Label(
@@ -367,7 +372,19 @@ Tips:
             jar_path = os.path.join(self.server_dir.get(), jar_path)
         
         if not os.path.exists(jar_path):
-            messagebox.showerror("Error", f"Server JAR not found: {jar_path}")
+            response = messagebox.askyesno(
+                "JAR Not Found",
+                f"Server JAR not found at {jar_path}.\n\nWould you like to automatically download {self.server_type.get()} version {self.server_version.get()}?"
+            )
+            if response:
+                # Set default JAR name if it's just "server.jar" and we want to be more specific
+                current_jar = self.server_jar.get()
+                if current_jar == "server.jar":
+                    new_jar_name = f"{self.server_type.get()}-{self.server_version.get()}.jar"
+                    self.server_jar.set(new_jar_name)
+                
+                self.log_to_console(f"Initiating auto-download for {self.server_type.get()} {self.server_version.get()}...\n")
+                threading.Thread(target=self._download_server_jar, daemon=True).start()
             return
         
         memory = self.server_memory.get()
@@ -914,6 +931,132 @@ Tips:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save configuration: {e}")
     
+    def _download_server_jar(self):
+        """Download the server JAR based on current settings."""
+        server_type = self.server_type.get().lower()
+        version = self.server_version.get()
+        jar_path = self.server_jar.get()
+        
+        if not os.path.isabs(jar_path):
+            jar_path = os.path.join(self.server_dir.get(), jar_path)
+            
+        try:
+            download_url = None
+            
+            if server_type in ["paper", "travertine", "waterfall"]:
+                # Get latest build for version
+                url = f"https://api.papermc.io/v2/projects/{server_type}/versions/{version}"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                builds = response.json().get("builds", [])
+                if not builds:
+                    raise Exception(f"No builds found for {server_type} {version}")
+                latest_build = builds[-1]
+                
+                # Get filename
+                url = f"https://api.papermc.io/v2/projects/{server_type}/versions/{version}/builds/{latest_build}"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                filename = response.json().get("downloads", {}).get("application", {}).get("name")
+                if not filename:
+                    raise Exception("Could not find download filename")
+                
+                download_url = f"https://api.papermc.io/v2/projects/{server_type}/versions/{version}/builds/{latest_build}/downloads/{filename}"
+                
+            elif server_type == "purpur":
+                download_url = f"https://api.purpurmc.org/v2/purpur/{version}/latest/download"
+                
+            elif server_type == "fabric":
+                # Get latest loader version
+                url = "https://meta.fabricmc.net/v2/versions/loader"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                loader_version = response.json()[0].get("version")
+                
+                # Get latest installer version
+                url = "https://meta.fabricmc.net/v2/versions/installer"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                installer_version = response.json()[0].get("version")
+                
+                download_url = f"https://meta.fabricmc.net/v2/versions/loader/{version}/{loader_version}/{installer_version}/server/jar"
+
+            if not download_url:
+                raise Exception(f"Auto-download not supported for {server_type} yet. Please download manually.")
+
+            self.root.after(0, lambda: self.log_to_console(f"Downloading from: {download_url}\n"))
+            
+            # Download the file
+            response = requests.get(download_url, stream=True, timeout=60)
+            response.raise_for_status()
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(jar_path), exist_ok=True)
+            
+            with open(jar_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            self.root.after(0, lambda: self.log_to_console(f"✓ Successfully downloaded {server_type} {version} to {jar_path}\n"))
+            self.root.after(0, lambda: messagebox.showinfo("Success", f"Successfully downloaded {server_type} {version}!\n\nYou can now run the server."))
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.log_to_console(f"❌ Download failed: {e}\n"))
+            self.root.after(0, lambda: messagebox.showerror("Download Error", f"Failed to download server JAR: {e}"))
+
+    def update_version_list(self):
+        """Update the version list based on the selected server type."""
+        server_type = self.server_type.get().lower()
+        self.log_to_console(f"Fetching versions for {server_type}...\n")
+        
+        # Run in a separate thread to avoid freezing UI
+        threading.Thread(target=self._fetch_versions_thread, args=(server_type,), daemon=True).start()
+
+    def _fetch_versions_thread(self, server_type: str):
+        """Fetch versions from various APIs."""
+        versions = []
+        try:
+            if server_type in ["paper", "travertine", "waterfall"]:
+                # PaperMC API
+                url = f"https://api.papermc.io/v2/projects/{server_type}"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                versions = response.json().get("versions", [])
+                versions.reverse()  # Newest first
+            
+            elif server_type in ["purpur"]:
+                # Purpur API
+                url = "https://api.purpurmc.org/v2/purpur"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                versions = response.json().get("versions", [])
+                versions.reverse()
+                
+            elif server_type in ["fabric"]:
+                # Fabric API
+                url = "https://meta.fabricmc.net/v2/versions/game"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                versions = [v.get("version") for v in response.json() if v.get("stable")]
+                
+            elif server_type in ["vanilla", "spigot", "bukkit", "forge"]:
+                # Use Modrinth as a fallback for many types
+                # This is a bit of a hack but Modrinth has a lot of data
+                url = "https://api.modrinth.com/v2/game_version"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                versions = [v.get("version") for v in response.json() if v.get("version_type") == "release"]
+
+            if versions:
+                self.root.after(0, lambda: self.server_version_combo.config(values=versions))
+                self.root.after(0, lambda: self.log_to_console(f"✓ Loaded {len(versions)} versions for {server_type}\n"))
+            else:
+                self.root.after(0, lambda: self.log_to_console(f"⚠️ No versions found for {server_type}\n"))
+                
+        except Exception as e:
+            self.root.after(0, lambda: self.log_to_console(f"❌ Error fetching versions: {e}\n"))
+
     def load_config(self):
         """Load configuration from file."""
         try:
